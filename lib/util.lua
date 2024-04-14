@@ -1,5 +1,5 @@
 local http = require("http")
-local html = require("html")
+local json = require("json")
 
 local util = {}
 
@@ -36,115 +36,35 @@ function util:compare_versions(v1o, v2o)
 end
 
 function util:getInfo()
-    print("Due to the many versions, you need to wait for about 2 minutes.")
-    local resp, err = http.get({
-        url = utilSingleton.BASE_URL
-    })
-    if err ~= nil or resp.status_code ~= 200 then
-        error("paring release info failed." .. err)
-    end
-    local bigVersionUrl = {}
-    html.parse(resp.body):find("a"):each(function(i, selection)
-        local href = selection:attr("href")
-        local sn = string.match(href, "^v%d")
-        local es = string.match(href, "/$")
-        local version = string.sub(href, 1, -2)
-        if sn and es then
-            if util:compare_versions({version=string.gsub(version, "^v", "")},{version="3.0"}) then
-                table.insert(bigVersionUrl, utilSingleton.BASE_URL..version)
-            end
-        end
-    end)
-
-    local pattern = "cmake%-(%d+%.%d+%.?%d*%-?%a*%d*)%-([%a%d]+)%-([%a%d_%-]+)"
     local result = {}
-    for _, url in ipairs(bigVersionUrl) do
-        local resp, err = http.get({
-            url = url
-        })
-        if err ~= nil or resp.status_code ~= 200 then
-            error("paring release info failed." .. err)
-        end
+    local resp, err = http.get({
+        url = "https://fastly.jsdelivr.net/gh/ahai-code/vfox-cmake@main/assets/version.json"
+    })
 
-        html.parse(resp.body):find("a"):each(function(i, selection)
-            local href = selection:attr("href")
-            local sn = string.match(href, "^cmake")
-            local es = string.match(href, "txt$")
-            if sn and es then
-                local resp, err = http.get({
-                    url = url.."/"..href
-                })
-                if err ~= nil or resp.status_code ~= 200 then
-                    error("paring release info failed." .. err)
-                end
-                local sha256Files = {}
+    if err ~= nil then
+        error("Failed to get information: " .. err)
+    end
+    if resp.status_code ~= 200 then
+        error("Failed to get information: status_code =>" .. resp.status_code)
+    end
 
-                for line in resp.body:gmatch("[^\n]+") do
-                    table.insert(sha256Files, line)
-                end
+    local respInfo = json.decode(resp.body)[RUNTIME.osType]
 
-                for _, str in ipairs(sha256Files) do
-                    if util:isMatched(str) then
-                    local sha256, filename = string.match(str, "(%w+)%s+(%S+)")
-                    local version, os, arch = string.match(filename, pattern)
-                    if version and os and arch then
-                        os = string.lower(os)
-                        arch = string.lower(arch)
-                        local downloadUrl = url.."/"..filename
-                       
-                        if RUNTIME.osType=="darwin" then
-                            if RUNTIME.archType=="amd64" and (arch=="x86_64" or arch=="x64") then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                            elseif arch=="universal" then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                            end
-                        elseif RUNTIME.osType == "windows"  then
-                            if RUNTIME.archType=="amd64" and (arch =="x64" or arch =="x86_64")then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                            elseif RUNTIME.archType=="386" and (arch =="i386" or arch =="x86") then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                            elseif RUNTIME.archType=="arm64" then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                            end
-                        elseif RUNTIME.osType == "linux" then
-                            if RUNTIME.archType=="386" and (arch =="i386" or arch =="aarch64") then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                            elseif RUNTIME.archType=="amd64" and arch =="x86_64" then
-                                table.insert(result,{version=version,note=""})
-                                table.insert(utilSingleton.RELEASES,{version=version,url=downloadUrl,sha256=sha256})
-                              end
-                        end
-                    end
-                    end
-                end
+    for _, info in pairs(respInfo) do
+        for _, obj in ipairs(info) do
+            if obj.arch=="" then
+                table.insert(result, {version = obj.version,note=""})
+                table.insert(utilSingleton.RELEASES,{version = obj.version,url=obj.download_url,sha256=obj.sha256})
+            elseif obj.arch == RUNTIME.archType then
+                table.insert(result, {version = obj.version,note=""})
+                table.insert(utilSingleton.RELEASES,{version = obj.version,url=obj.download_url,sha256=obj.sha256})
             end
-        end)
+        end
     end
     table.sort(result, function(a, b)
         return util:compare_versions(a,b)
     end)
     return result
-end
-
-function util:isMatched(str)
-    str =  string.lower(str)
-    if RUNTIME.osType == "windows" then
-        return (string.find(str, "windows") or
-                string.find(str, "win32") or
-                string.find(str, "win64") ) and
-                (string.find(str, "%.zip$"))
-    elseif RUNTIME.osType == "linux" then
-        return string.find(str, "linux") and string.find(str, "%.tar%.gz$")
-
-    elseif  RUNTIME.osType == "darwin" then
-        return (string.find(str, "macos") or string.find(str, "darwin")) and string.find(str, "%.tar%.gz$")
-    end
 end
 
 return utilSingleton
