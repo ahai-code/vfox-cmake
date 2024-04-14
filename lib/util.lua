@@ -36,6 +36,7 @@ function util:compare_versions(v1o, v2o)
 end
 
 function util:getInfo()
+    print("Due to the many versions, you need to wait for about 2 minutes.")
     local resp, err = http.get({
         url = utilSingleton.BASE_URL
     })

@@ -37,5 +37,4 @@ PLUGIN.manifestUrl = "https://github.com/version-fox/vfox-cmake/releases/downloa
 -- Some things that need user to be attention!
 PLUGIN.notes = {
     "Supports version 3.0 and above.",
-    "Slow loading due to more versions."
 }
